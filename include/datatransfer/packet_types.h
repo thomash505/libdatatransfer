@@ -10,13 +10,13 @@ struct packet_header
 	uint8_t SYNC_1;
 	uint8_t SYNC_2;
 	uint8_t id;
-	uint8_t size;
+	uint8_t deserialized_size;
 
-	packet_header(const uint8_t id, const uint8_t size)
+	packet_header(const uint8_t size, const uint8_t id)
 		: SYNC_1(0x55)
 		, SYNC_2(0xAA)
 		, id(id)
-		, size(size)
+		, deserialized_size(size)
 	{}
 
 	template <typename policy>
@@ -26,13 +26,14 @@ struct packet_header
 		p % SYNC_1;
 		p % SYNC_2;
 		p % id;
-		p % size;
+		p % deserialized_size;
 	}
 };
 
 struct packet_footer
 {
-	uint8_t checksum;
+	using checksum_type = uint8_t;
+	checksum_type checksum;
 
 	template <typename policy>
 	void method(typename policy::stream_type& stream)
@@ -42,16 +43,40 @@ struct packet_footer
 	}
 };
 
+template<typename T>
 struct packet
 {
 	packet_header header;
-	void* data;
+	T& data;
 	packet_footer footer;
 
-	packet(void* data)
-		: header(0, 0)
-		, data(data)
+	packet(T& t, const uint8_t id = 0)
+		: header(sizeof(T), id)
+		, data(t)
 	{}
+
+	template <typename policy>
+	void method(typename policy::stream_type& stream)
+	{
+		policy p(stream);
+		p % header;
+		p % data;
+		p % footer;
+	}
+
+	packet_footer::checksum_type calculate_crc() const
+	{
+		packet_footer::checksum_type ret = 0;
+
+		ret ^= header.id;
+		ret ^= header.deserialized_size;
+		for (int i = 0; i < header.deserialized_size; ++i)
+		{
+			ret ^= reinterpret_cast<char*>(&data)[i];
+		}
+
+		return ret;
+	}
 };
 
 }

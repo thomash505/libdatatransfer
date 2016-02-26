@@ -99,7 +99,7 @@ protected:
 	output_stream& _ostream;
     MessageHandlerMap message_handlers;
 	thread read_thread;
-	packet _rx_packet;
+	packet<char[MAX_MESSAGE_SIZE]> _rx_packet;
     char read_buffer[MAX_MESSAGE_SIZE];
 	parse_state _parse_state;
 
@@ -139,6 +139,8 @@ public:
     template<int T>
 	void send(typename serialization_traits::template data<T>::type& data)
     {
+		using data_type = typename serialization_traits::template data<T>::type;
+
 		MutexLocker<mutex> locker(send_mutex);
     	static_assert(T != 0, "T Requires MessageType");
 
@@ -146,13 +148,11 @@ public:
 		{
 			try
 			{
-				packet_header header(T, sizeof(T));
-				packet_footer footer;
+				packet<data_type> p(data, T);
+				p.footer.checksum = p.calculate_crc();
 
 				serializer<output_stream> s(_ostream);
-				s(header);
-				s(data);
-				s(footer);
+				s(p);
 			}
 			catch (std::exception& e)
 			{
@@ -193,8 +193,8 @@ protected:
 								_parse_state = WAIT_FOR_SIZE;
 							break;
 							case WAIT_FOR_SIZE:
-								_rx_packet.header.size = c;
-								if (_rx_packet.header.size > 0)
+								_rx_packet.header.deserialized_size = c;
+								if (_rx_packet.header.deserialized_size > 0)
 									_parse_state = WAIT_FOR_DATA;
 								else
 									_parse_state = WAIT_FOR_CRC;
@@ -211,9 +211,12 @@ protected:
 							}
 							break;
 							case WAIT_FOR_CRC:
-								if (message_handlers.count(_rx_packet.header.id) != 0)
+								if (c == _rx_packet.calculate_crc())
 								{
-									message_handlers[_rx_packet.header.id]->signal(read_buffer);
+									if (message_handlers.count(_rx_packet.header.id) != 0)
+									{
+										message_handlers[_rx_packet.header.id]->signal(read_buffer);
+									}
 								}
 						}
 					}
