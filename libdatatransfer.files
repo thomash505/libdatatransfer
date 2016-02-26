@@ -1,0 +1,7 @@
+include/datatransfer/p2p_connector.hpp
+include/datatransfer/packet_types.h
+include/datatransfer/serializer.hpp
+include/datatransfer/serialization_read_policy.hpp
+include/datatransfer/serialization_write_policy.hpp
+include/datatransfer/SerializationTraits.hpp
+include/datatransfer/deserializer.hpp
