@@ -2,11 +2,9 @@
 #define DATATRANSFER_P2P_CONNECTOR_HPP
 
 #include <functional>
+#include <memory>
 
-#include <boost/ptr_container/ptr_map.hpp>
-#include <boost/signals2.hpp>
-#include <boost/signals2/signal_type.hpp>
-
+#include "message_handler_base.hpp"
 #include "serializer.hpp"
 #include "deserializer.hpp"
 
@@ -19,30 +17,9 @@ private:
 	mutex& _mtx;
 
 public:
-	inline explicit MutexLocker(mutex& mtx) : _mtx(mtx) { _mtx.lock(); }
-	inline ~MutexLocker() { _mtx.unlock(); }
+	explicit MutexLocker(mutex& mtx) : _mtx(mtx) { _mtx.lock(); }
+	~MutexLocker() { _mtx.unlock(); }
 };
-
-struct MessageHandlerBase
-{
-    virtual void signal(char*) { }
-};
-
-typedef std::shared_ptr<MessageHandlerBase> MessageHandlerPtr;
-
-template<typename DataType>
-struct MessageHandler : MessageHandlerBase
-{
-    boost::signals2::signal<void(DataType&)> message_signal;
-
-    virtual void signal(char* data)
-    {
-        message_signal(reinterpret_cast<DataType&>(*data));
-    }
-};
-
-typedef boost::ptr_map<uint8_t,MessageHandlerPtr> MessageHandlerMap;
-
 
 template<typename input_stream,
 		 typename serialization_traits,
@@ -72,15 +49,17 @@ struct DeserializeHelper<input_stream, serialization_traits, N, 0>
 };
 
 template<typename mutex,
-		 typename input_stream,
-		 typename output_stream,
+		 typename input_output_stream,
 		 typename wait_policy,
 		 typename thread,
 		 typename serialization_traits,
-		 uint MAX_MESSAGE_SIZE=1024>
+		 unsigned int MAX_MESSAGE_SIZE=1024>
 class p2p_connector
 		: wait_policy
 {
+	using MessageHandlerPtr = std::shared_ptr<message_handler_base>;
+	using MessageHandlerArray = MessageHandlerPtr[serialization_traits::NUMBER_OF_MESSAGES];
+
 	enum parse_state
 	{
 		WAIT_FOR_SYNC_1,
@@ -92,144 +71,125 @@ class p2p_connector
 	};
 
 protected:
-	mutex send_mutex;
-    bool stop_thread;
-    uint wait_ms;
-	input_stream& _istream;
-	output_stream& _ostream;
-    MessageHandlerMap message_handlers;
-	thread read_thread;
+	mutex _send_mutex;
+	bool _stop_thread;
+	unsigned int _wait_ms;
+	input_output_stream& _iostream;
+	MessageHandlerArray _message_handlers;
+	thread _read_thread;
 	packet<char[MAX_MESSAGE_SIZE]> _rx_packet;
-    char read_buffer[MAX_MESSAGE_SIZE];
+	char _read_buffer[MAX_MESSAGE_SIZE];
 	parse_state _parse_state;
 
 public:
-	p2p_connector(input_stream& istream,
-				 output_stream& ostream,
-				 uint waitMs=5)
-		: stop_thread(false)
-        , wait_ms(waitMs)
-		, _istream(istream)
-		, _ostream(ostream)
-		, read_thread(std::bind(&p2p_connector::run_read, this))
-		, _rx_packet(read_buffer)
+	p2p_connector(input_output_stream& stream,
+				  unsigned int waitMs=5)
+		: _stop_thread(false)
+		, _wait_ms(waitMs)
+		, _iostream(stream)
+		, _read_thread(std::bind(&p2p_connector::run_read, this))
+		, _rx_packet(_read_buffer)
 		, _parse_state(WAIT_FOR_SYNC_1)
-    {
-    }
+	{}
 
 	~p2p_connector()
-    {
-        stop_thread = true;
-        read_thread.join();
-    }
-
-	template<int T>
-	void registerMessageHandler(std::function<void(typename serialization_traits::template data<T>::type&)> handler)
 	{
-		static_assert(T != 0, "T Requires MessageType");
-
-		if(message_handlers.count(T) == 0)
-		{
-			message_handlers[T].reset(new MessageHandler<typename serialization_traits::template data<T>::type>());
-		}
-		auto pHandle = std::static_pointer_cast<MessageHandler<typename serialization_traits::template data<T>::type>>(message_handlers[T]);
-		pHandle->message_signal.connect(handler);
+		_stop_thread = true;
+		_read_thread.join();
 	}
 
-    template<int T>
+	template<int T>
+	void registerMessageHandler(std::shared_ptr<message_handler_base> handler)
+	{
+		static_assert((T > 0) && (T <= serialization_traits::NUMBER_OF_MESSAGES), "T is not a valid message type");
+
+		_message_handlers[T-1] = handler;
+	}
+
+	template<int T>
 	void send(typename serialization_traits::template data<T>::type& data)
-    {
+	{
+		static_assert((T > 0) && (T <= serialization_traits::NUMBER_OF_MESSAGES), "T is not a valid message type");
 		using data_type = typename serialization_traits::template data<T>::type;
 
-		MutexLocker<mutex> locker(send_mutex);
-    	static_assert(T != 0, "T Requires MessageType");
+		MutexLocker<mutex> locker(_send_mutex);
 
-		if (_ostream.good())
+		if (_iostream.good())
 		{
-			try
-			{
-				packet<data_type> p(data, T);
-				p.footer.checksum = p.calculate_crc();
+			packet<data_type> p(data, T);
+			p.footer.checksum = p.calculate_crc();
 
-				serializer<output_stream> s(_ostream);
-				s(p);
-			}
-			catch (std::exception& e)
-			{
-				std::cerr << e.what() << std::endl;
-			}
+			serializer<input_output_stream> s(_iostream);
+			s(p);
 		}
-    }
+	}
 
 protected:
-    virtual void run_read()
-    {
-        while(!stop_thread)
-        {
-			if (_istream.good())
-            {
-                try
-                {
-					int c;
-					if ((c = _istream.get()) >= 0)
+	virtual void run_read()
+	{
+		while(!_stop_thread)
+		{
+			if (_iostream.good())
+			{
+				int c;
+				if ((c = _iostream.get()) >= 0)
+				{
+					switch (_parse_state)
 					{
-						switch (_parse_state)
-						{
-							case WAIT_FOR_SYNC_1:
-								if (c == _rx_packet.header.SYNC_1)
-									_parse_state = WAIT_FOR_SYNC_2;
-							break;
-							case WAIT_FOR_SYNC_2:
-								if (c == _rx_packet.header.SYNC_2)
-									_parse_state = WAIT_FOR_ID;
-								else
-									_parse_state = WAIT_FOR_SYNC_1;
-							break;
-							case WAIT_FOR_ID:
-								if (!serialization_traits::valid(c))
-									throw std::runtime_error("Data type not recognised for deserialisation.");
-
-								_rx_packet.header.id = c;
-								_parse_state = WAIT_FOR_SIZE;
-							break;
-							case WAIT_FOR_SIZE:
-								_rx_packet.header.deserialized_size = c;
-								if (_rx_packet.header.deserialized_size > 0)
-									_parse_state = WAIT_FOR_DATA;
-								else
-									_parse_state = WAIT_FOR_CRC;
-							break;
-							case WAIT_FOR_DATA:
+						case WAIT_FOR_SYNC_1:
+							if (c == _rx_packet.header.SYNC_1)
+								_parse_state = WAIT_FOR_SYNC_2;
+						break;
+						case WAIT_FOR_SYNC_2:
+							if (c == _rx_packet.header.SYNC_2)
+								_parse_state = WAIT_FOR_ID;
+							else
+								_parse_state = WAIT_FOR_SYNC_1;
+						break;
+						case WAIT_FOR_ID:
+							if (!serialization_traits::valid(c))
 							{
-								_istream.putback(c);
-								deserializer<input_stream> d(_istream);
-
-								DeserializeHelper<input_stream, serialization_traits, 1, serialization_traits::NUMBER_OF_MESSAGES> helper;
-								helper.deserializeType(_rx_packet.header.id, d, read_buffer);
-
-								_parse_state = WAIT_FOR_CRC;
+								// Silently fail on error
+								_parse_state = WAIT_FOR_SYNC_1;
 							}
-							break;
-							case WAIT_FOR_CRC:
-								if (c == _rx_packet.calculate_crc())
-								{
-									if (message_handlers.count(_rx_packet.header.id) != 0)
-									{
-										message_handlers[_rx_packet.header.id]->signal(read_buffer);
-									}
-								}
-						}
-					}
-                }
-                catch(std::exception& ex)
-                {
-                    std::cerr << ex.what() << std::endl;
-                }
-            }
 
-			wait_policy::wait(wait_ms);
-        }
-    }
+							_rx_packet.header.id = c;
+							_parse_state = WAIT_FOR_SIZE;
+						break;
+						case WAIT_FOR_SIZE:
+							_rx_packet.header.deserialized_size = c;
+							if (_rx_packet.header.deserialized_size > 0)
+								_parse_state = WAIT_FOR_DATA;
+							else
+								_parse_state = WAIT_FOR_CRC;
+						break;
+						case WAIT_FOR_DATA:
+						{
+							_iostream.ungetc();
+							deserializer<input_output_stream> d(_iostream);
+
+							DeserializeHelper<input_output_stream, serialization_traits, 1, serialization_traits::NUMBER_OF_MESSAGES> helper;
+							helper.deserializeType(_rx_packet.header.id, d, _read_buffer);
+
+							_parse_state = WAIT_FOR_CRC;
+						}
+						break;
+						case WAIT_FOR_CRC:
+							if (c == _rx_packet.calculate_crc())
+							{
+								auto id = _rx_packet.header.id-1;
+								if (_message_handlers[id])
+								{
+									_message_handlers[id]->signal(_read_buffer);
+								}
+							}
+					}
+				}
+			}
+
+			wait_policy::wait(_wait_ms);
+		}
+	}
 };
 }
 #endif // DATATRANSFER_P2P_CONNECTOR_HPP

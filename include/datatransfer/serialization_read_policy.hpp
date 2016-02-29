@@ -2,7 +2,6 @@
 #define DATATRANSFER_SERIALIZATIONREADPOLICY_HPP
 
 #include <Eigen/Core>
-#include <boost/detail/endian.hpp>
 
 namespace datatransfer
 {
@@ -53,13 +52,11 @@ public:
     template <typename T>
 	bool read(T& t)
     {
+		// Assume little endian encoding
         char* buf = reinterpret_cast<char*>(&t);
-#ifdef BOOST_LITTLE_ENDIAN
         is.read(buf, sizeof(T));
+
 		return true;
-#elif BOOST_BIG_ENDIAN
-#error <Serialization> big endian is not currently supported...
-#endif
     }
 };
 

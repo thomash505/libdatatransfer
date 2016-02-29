@@ -2,7 +2,6 @@
 #define DATATRANSFER_SERIALIZATIONWRITEPOLICY_HPP
 
 #include <Eigen/Core>
-#include <boost/detail/endian.hpp>
 
 namespace datatransfer
 {
@@ -56,11 +55,7 @@ private:
     void write(const T& t)
     {
         const char* buf = reinterpret_cast<const char*>(&t);
-#ifdef BOOST_LITTLE_ENDIAN
         os.write(buf, sizeof(T));
-#elif BOOST_BIG_ENDIAN
-#error <Serialization> big endian is not currently supported...
-#endif
     }
 };
 

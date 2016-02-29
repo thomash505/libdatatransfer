@@ -5,3 +5,11 @@ include/datatransfer/serialization_read_policy.hpp
 include/datatransfer/serialization_write_policy.hpp
 include/datatransfer/SerializationTraits.hpp
 include/datatransfer/deserializer.hpp
+include/datatransfer/serialization_read_policy.hpp
+include/datatransfer/serialization_write_policy.hpp
+include/datatransfer/p2p_connector.hpp
+include/datatransfer/message_handler_base.hpp
+include/datatransfer/boost_message_handler.hpp
+include/datatransfer/packet_types.h
+include/datatransfer/deserializer.hpp
+include/datatransfer/serializer.hpp
