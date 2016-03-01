@@ -21,33 +21,6 @@ public:
 	~MutexLocker() { _mtx.unlock(); }
 };
 
-template<typename input_stream,
-		 typename serialization_traits,
-		 int N,
-		 int Count>
-struct DeserializeHelper
-{
-	void static deserializeType(int data_type, deserializer<input_stream>& deserializer, char* read_buffer)
-	{
-		if (N == data_type )
-		{
-			deserializer(reinterpret_cast<typename serialization_traits::template data<N>::type&>(*read_buffer));
-		}
-		else
-		{
-			DeserializeHelper<input_stream,serialization_traits,N+1,Count-1>::deserializeType(data_type, deserializer,read_buffer);
-		}
-	}
-};
-
-template<typename input_stream,
-		 typename serialization_traits,
-		 int N>
-struct DeserializeHelper<input_stream, serialization_traits, N, 0>
-{
-	void static deserializeType(uint8_t, deserializer<input_stream>&, char*) { }
-};
-
 template<typename mutex,
 		 typename input_output_stream,
 		 typename wait_policy,
@@ -59,6 +32,31 @@ class p2p_connector
 {
 	using MessageHandlerPtr = std::shared_ptr<message_handler_base>;
 	using MessageHandlerArray = MessageHandlerPtr[serialization_traits::NUMBER_OF_MESSAGES];
+	using write_policy = typename serialization_traits::template serialization<input_output_stream>::write_policy;
+	using read_policy = typename serialization_traits::template serialization<input_output_stream>::read_policy;
+
+	template<int N,
+			 int Count>
+	struct DeserializeHelper
+	{
+		void static deserializeType(int data_type, deserializer<read_policy>& deserializer, char* read_buffer)
+		{
+			if (N == data_type )
+			{
+				deserializer(reinterpret_cast<typename serialization_traits::template data<N>::type&>(*read_buffer));
+			}
+			else
+			{
+				DeserializeHelper<N+1,Count-1>::deserializeType(data_type, deserializer,read_buffer);
+			}
+		}
+	};
+
+	template<int N>
+	struct DeserializeHelper<N, 0>
+	{
+		void static deserializeType(uint8_t, deserializer<read_policy>&, char*) { }
+	};
 
 	enum parse_state
 	{
@@ -119,20 +117,22 @@ public:
 			packet<data_type> p(data, T);
 			p.footer.checksum = p.calculate_crc();
 
-			serializer<input_output_stream> s(_iostream);
+			serializer<write_policy> s(_iostream);
 			s(p);
+
+			_iostream.flush();
 		}
 	}
 
 protected:
-	virtual void run_read()
+	void run_read()
 	{
 		while(!_stop_thread)
 		{
 			if (_iostream.good())
 			{
 				int c;
-				if ((c = _iostream.get()) >= 0)
+				while (((c = _iostream.get()) >= 0) && !_stop_thread)
 				{
 					switch (_parse_state)
 					{
@@ -166,9 +166,9 @@ protected:
 						case WAIT_FOR_DATA:
 						{
 							_iostream.ungetc();
-							deserializer<input_output_stream> d(_iostream);
+							deserializer<read_policy> d(_iostream);
 
-							DeserializeHelper<input_output_stream, serialization_traits, 1, serialization_traits::NUMBER_OF_MESSAGES> helper;
+							DeserializeHelper<1, serialization_traits::NUMBER_OF_MESSAGES> helper;
 							helper.deserializeType(_rx_packet.header.id, d, _read_buffer);
 
 							_parse_state = WAIT_FOR_CRC;
@@ -183,6 +183,8 @@ protected:
 									_message_handlers[id]->signal(_read_buffer);
 								}
 							}
+							_parse_state = WAIT_FOR_SYNC_1;
+						break;
 					}
 				}
 			}

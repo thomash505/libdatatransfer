@@ -2,16 +2,16 @@
 #define DATATRANSFER_DESERIALIZER_HPP
 
 #include "packet_types.h"
-#include "serialization_read_policy.hpp"
 
 namespace datatransfer {
 
-template <typename input_stream>
+template <typename read_policy>
 class deserializer
 {
 protected:
+	using input_stream = typename read_policy::stream_type;
 	input_stream& _is;
-	serialization_read_policy<input_stream> _read_policy;
+	read_policy _read_policy;
 
 public:
 	deserializer(input_stream& is)
