@@ -30,8 +30,8 @@ template<typename mutex,
 class p2p_connector
 		: wait_policy
 {
-	using MessageHandlerPtr = std::shared_ptr<message_handler_base>;
-	using MessageHandlerArray = MessageHandlerPtr[serialization_traits::NUMBER_OF_MESSAGES];
+	using message_handler_callback = std::function<void(const void*)>;
+	using message_handler_array = message_handler_callback[serialization_traits::NUMBER_OF_MESSAGES];
 	using write_policy = typename serialization_traits::template serialization<input_output_stream>::write_policy;
 	using read_policy = typename serialization_traits::template serialization<input_output_stream>::read_policy;
 
@@ -73,7 +73,7 @@ protected:
 	bool _stop_thread;
 	unsigned int _wait_ms;
 	input_output_stream& _iostream;
-	MessageHandlerArray _message_handlers;
+	message_handler_array _message_handlers;
 	thread _read_thread;
 	packet<char[MAX_MESSAGE_SIZE]> _rx_packet;
 	char _read_buffer[MAX_MESSAGE_SIZE];
@@ -97,7 +97,7 @@ public:
 	}
 
 	template<int T>
-	void registerMessageHandler(std::shared_ptr<message_handler_base> handler)
+	void registerMessageHandler(message_handler_callback handler)
 	{
 		static_assert((T > 0) && (T <= serialization_traits::NUMBER_OF_MESSAGES), "T is not a valid message type");
 
@@ -180,7 +180,7 @@ protected:
 								auto id = _rx_packet.header.id-1;
 								if (_message_handlers[id])
 								{
-									_message_handlers[id]->signal(_read_buffer);
+									_message_handlers[id](_read_buffer);
 								}
 							}
 							_parse_state = WAIT_FOR_SYNC_1;
