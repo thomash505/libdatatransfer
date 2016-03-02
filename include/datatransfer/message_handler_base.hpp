@@ -5,7 +5,7 @@ namespace datatransfer {
 
 struct message_handler_base
 {
-    virtual void signal(char*) {}
+	virtual void signal(const void*) = 0;
 };
 
 }
