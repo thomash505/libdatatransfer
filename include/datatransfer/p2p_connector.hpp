@@ -25,15 +25,15 @@ template<typename mutex,
 		 typename input_output_stream,
 		 typename wait_policy,
 		 typename thread,
-		 typename serialization_traits,
+                 typename serialization_policy,
 		 unsigned int MAX_MESSAGE_SIZE=1024>
 class p2p_connector
 		: wait_policy
 {
 	using message_handler_callback = std::function<void(const void*)>;
-	using message_handler_array = message_handler_callback[serialization_traits::NUMBER_OF_MESSAGES];
-	using write_policy = typename serialization_traits::template serialization<input_output_stream>::write_policy;
-	using read_policy = typename serialization_traits::template serialization<input_output_stream>::read_policy;
+        using message_handler_array = message_handler_callback[serialization_policy::NUMBER_OF_MESSAGES];
+        using write_policy = typename serialization_policy::template serialization<input_output_stream>::write_policy;
+        using read_policy = typename serialization_policy::template serialization<input_output_stream>::read_policy;
 
 	template<int N,
 			 int Count>
@@ -43,7 +43,7 @@ class p2p_connector
 		{
 			if (N == data_type )
 			{
-				deserializer(reinterpret_cast<typename serialization_traits::template data<N>::type&>(*read_buffer));
+                                deserializer(reinterpret_cast<typename serialization_policy::template data<N>::type&>(*read_buffer));
 			}
 			else
 			{
@@ -99,16 +99,16 @@ public:
 	template<int T>
 	void registerMessageHandler(message_handler_callback handler)
 	{
-		static_assert((T > 0) && (T <= serialization_traits::NUMBER_OF_MESSAGES), "T is not a valid message type");
+                static_assert((T > 0) && (T <= serialization_policy::NUMBER_OF_MESSAGES), "T is not a valid message type");
 
 		_message_handlers[T-1] = handler;
 	}
 
 	template<int T>
-	void send(typename serialization_traits::template data<T>::type& data)
+        void send(typename serialization_policy::template data<T>::type& data)
 	{
-		static_assert((T > 0) && (T <= serialization_traits::NUMBER_OF_MESSAGES), "T is not a valid message type");
-		using data_type = typename serialization_traits::template data<T>::type;
+                static_assert((T > 0) && (T <= serialization_policy::NUMBER_OF_MESSAGES), "T is not a valid message type");
+                using data_type = typename serialization_policy::template data<T>::type;
 
 		MutexLocker<mutex> locker(_send_mutex);
 
@@ -147,7 +147,7 @@ protected:
 								_parse_state = WAIT_FOR_SYNC_1;
 						break;
 						case WAIT_FOR_ID:
-							if (!serialization_traits::valid(c))
+                                                        if (!serialization_policy::valid(c))
 							{
 								// Silently fail on error
 								_parse_state = WAIT_FOR_SYNC_1;
@@ -168,7 +168,7 @@ protected:
 							_iostream.ungetc();
 							deserializer<read_policy> d(_iostream);
 
-							DeserializeHelper<1, serialization_traits::NUMBER_OF_MESSAGES> helper;
+                                                        DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
 							helper.deserializeType(_rx_packet.header.id, d, _read_buffer);
 
 							_parse_state = WAIT_FOR_CRC;
