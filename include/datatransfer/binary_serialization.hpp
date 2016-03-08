@@ -108,9 +108,8 @@ struct binary_serialization
         bool read(T& t)
         {
             // Assume little endian encoding
-            is.read(reinterpret_cast<typename input_stream::char_type*>(&t), sizeof(T));
-
-            return true;
+			const auto n = sizeof(T);
+			return is.read(reinterpret_cast<typename input_stream::char_type*>(&t), n) == n;
         }
     };
 
