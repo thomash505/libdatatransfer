@@ -113,6 +113,63 @@ struct binary_serialization
             return true;
         }
     };
+
+    class checksum_policy
+    {
+    private:
+        uint8_t _checksum;
+
+    public:
+        using data_type = uint8_t;
+        using stream_type = data_type;
+
+        checksum_policy(data_type checksum=0)
+            : _checksum(checksum)
+        {}
+
+        uint8_t checksum() const { return _checksum; }
+
+        template <typename T>
+        void operator% (T& x)
+        {
+            operate(x);
+        }
+
+    protected:
+        template <typename Scalar, int M, int N>
+        void operate(Eigen::Matrix<Scalar, M, N>& matrix)
+        {
+            for (int j = 0; j < N; j++)
+            {
+                for (int i = 0; i < M; i++)
+                {
+                    operate(matrix(i,j));
+                }
+            }
+        }
+
+        template <typename T, int M=0, int N=0>
+        void operate(T& t)
+        {
+            t.template method<checksum_policy>(_checksum);
+        }
+
+        void operate(float& x) 		{ read(x); }
+        void operate(double& x) 	{ read(x); }
+        void operate(char& x)   	{ read(x); }
+        void operate(bool& x)   	{ read(x); }
+        void operate(uint8_t& x)    { read(x); }
+        void operate(uint64_t& x)	{ read(x); }
+
+        template <typename T>
+        void read(T& t)
+        {
+            // Assume little endian encoding
+            auto* buf = reinterpret_cast<const data_type*>(&t);
+            for (int i = 0; i < sizeof(T); ++i)
+                _checksum ^= buf[i];
+        }
+    };
 };
 
 }

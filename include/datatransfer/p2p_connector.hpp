@@ -34,12 +34,52 @@ class p2p_connector
         using message_handler_array = message_handler_callback[serialization_policy::NUMBER_OF_MESSAGES];
         using write_policy = typename serialization_policy::template serialization<input_output_stream>::write_policy;
         using read_policy = typename serialization_policy::template serialization<input_output_stream>::read_policy;
+        using checksum_policy = typename serialization_policy::template serialization<input_output_stream>::checksum_policy;
+
+    template<int N,
+             int Count>
+    struct CallbackHelper
+    {
+        static void callback(const typename checksum_policy::data_type& checksum,
+                             packet<uint8_t[MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
+                             const message_handler_array& message_handlers)
+        {
+            if (N == rx_packet.header.id)
+            {
+                using type = typename serialization_policy::template data<N>::type;
+
+                packet<type, checksum_policy> decoded_packet(reinterpret_cast<type&>(rx_packet.data), rx_packet.header.id);
+
+                if (checksum == decoded_packet.calculate_crc())
+                {
+                    auto id = rx_packet.header.id - 1;
+                    if (message_handlers[id])
+                    {
+                        message_handlers[id](rx_packet.data);
+                    }
+                }
+            }
+            else
+            {
+                CallbackHelper<N+1,Count-1>::callback(checksum, rx_packet, message_handlers);
+            }
+        }
+    };
+
+    template<int N>
+    struct CallbackHelper<N,0>
+    {
+        static void callback(const typename checksum_policy::data_type& checksum,
+                             packet<uint8_t[MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
+                             const message_handler_array& message_handlers)
+        {}
+    };
 
 	template<int N,
 			 int Count>
 	struct DeserializeHelper
 	{
-		void static deserializeType(int data_type, deserializer<read_policy>& deserializer, char* read_buffer)
+        void static deserializeType(int data_type, deserializer<read_policy>& deserializer, uint8_t* read_buffer)
 		{
 			if (N == data_type )
 			{
@@ -55,7 +95,7 @@ class p2p_connector
 	template<int N>
 	struct DeserializeHelper<N, 0>
 	{
-		void static deserializeType(uint8_t, deserializer<read_policy>&, char*) { }
+        void static deserializeType(uint8_t, deserializer<read_policy>&, uint8_t*) { }
 	};
 
 	enum parse_state
@@ -75,8 +115,8 @@ protected:
 	input_output_stream& _iostream;
 	message_handler_array _message_handlers;
 	thread _read_thread;
-	packet<char[MAX_MESSAGE_SIZE]> _rx_packet;
-	char _read_buffer[MAX_MESSAGE_SIZE];
+    packet<uint8_t[MAX_MESSAGE_SIZE], checksum_policy> _rx_packet;
+    uint8_t _read_buffer[MAX_MESSAGE_SIZE];
 	parse_state _parse_state;
 
 public:
@@ -99,7 +139,7 @@ public:
 	template<int T>
 	void registerMessageHandler(message_handler_callback handler)
 	{
-                static_assert((T > 0) && (T <= serialization_policy::NUMBER_OF_MESSAGES), "T is not a valid message type");
+                static_assert(serialization_policy::valid(T), "T is not a valid message type");
 
 		_message_handlers[T-1] = handler;
 	}
@@ -107,14 +147,14 @@ public:
 	template<int T>
         void send(typename serialization_policy::template data<T>::type& data)
 	{
-                static_assert((T > 0) && (T <= serialization_policy::NUMBER_OF_MESSAGES), "T is not a valid message type");
+                static_assert(serialization_policy::valid(T), "T is not a valid message type");
                 using data_type = typename serialization_policy::template data<T>::type;
 
 		MutexLocker<mutex> locker(_send_mutex);
 
 		if (_iostream.good())
 		{
-			packet<data_type> p(data, T);
+            packet<data_type, checksum_policy> p(data, T);
 			p.footer.checksum = p.calculate_crc();
 
 			serializer<write_policy> s(_iostream);
@@ -175,14 +215,8 @@ protected:
 						}
 						break;
 						case WAIT_FOR_CRC:
-							if (c == _rx_packet.calculate_crc())
-							{
-								auto id = _rx_packet.header.id-1;
-								if (_message_handlers[id])
-								{
-									_message_handlers[id](_read_buffer);
-								}
-							}
+                            CallbackHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                            helper.callback(c, _rx_packet, _message_handlers);
 							_parse_state = WAIT_FOR_SYNC_1;
 						break;
 					}
