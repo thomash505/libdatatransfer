@@ -116,13 +116,13 @@ struct binary_serialization
     class checksum_policy
     {
     private:
-        uint8_t _checksum;
+        uint8_t& _checksum;
 
     public:
         using data_type = uint8_t;
         using stream_type = data_type;
 
-        checksum_policy(data_type checksum=0)
+        checksum_policy(data_type& checksum)
             : _checksum(checksum)
         {}
 

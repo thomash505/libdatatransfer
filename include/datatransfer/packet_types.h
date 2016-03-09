@@ -64,12 +64,13 @@ struct packet
 
     typename checksum_policy::data_type calculate_crc()
     {
-        checksum_policy p;
+        typename checksum_policy::data_type ret;
+        checksum_policy p(ret);
 
         p % header.id;
         p % data;
 
-        return p.checksum();
+        return ret;
     }
 };
 
