@@ -83,6 +83,7 @@ class p2p_connector
 		{
 			if (N == data_type )
 			{
+                if (serialization_policy::template data<N>::length > 0)
                                 deserializer(reinterpret_cast<typename serialization_policy::template data<N>::type&>(*read_buffer));
 			}
 			else
@@ -103,8 +104,6 @@ class p2p_connector
 		WAIT_FOR_SYNC_1,
 		WAIT_FOR_SYNC_2,
 		WAIT_FOR_ID,
-		WAIT_FOR_SIZE,
-		WAIT_FOR_DATA,
 		WAIT_FOR_CRC
 	};
 
@@ -187,6 +186,7 @@ protected:
 								_parse_state = WAIT_FOR_SYNC_1;
 						break;
 						case WAIT_FOR_ID:
+                        {
                                                         if (!serialization_policy::valid(c))
 							{
 								// Silently fail on error
@@ -194,32 +194,22 @@ protected:
 							}
 							else
 							{
-								_rx_packet.header.id = c;
-								_parse_state = WAIT_FOR_SIZE;
-							}
-						break;
-						case WAIT_FOR_SIZE:
-							_rx_packet.header.deserialized_size = c;
-							if (_rx_packet.header.deserialized_size > 0)
-								_parse_state = WAIT_FOR_DATA;
-							else
-								_parse_state = WAIT_FOR_CRC;
-						break;
-						case WAIT_FOR_DATA:
-						{
-							_iostream.ungetc();
-							deserializer<read_policy> d(_iostream);
+                                _rx_packet.header.id = c;
+                                deserializer<read_policy> d(_iostream);
 
-                                                        DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
-							helper.deserializeType(_rx_packet.header.id, d, _read_buffer);
+                                DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                                helper.deserializeType(_rx_packet.header.id, d, _read_buffer);
 
-							_parse_state = WAIT_FOR_CRC;
-						}
+                                _parse_state = WAIT_FOR_CRC;
+                            }
+                        }
 						break;
 						case WAIT_FOR_CRC:
+                        {
                             CallbackHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
                             helper.callback(c, _rx_packet, _message_handlers);
 							_parse_state = WAIT_FOR_SYNC_1;
+                        }
 						break;
 					}
 				}

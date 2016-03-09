@@ -10,13 +10,11 @@ struct packet_header
     uint8_t SYNC_1;
     uint8_t SYNC_2;
     uint8_t id;
-    uint8_t deserialized_size;
 
-    packet_header(const uint8_t size, const uint8_t id)
+    packet_header(const uint8_t id)
         : SYNC_1(0x55)
         , SYNC_2(0xAA)
         , id(id)
-        , deserialized_size(size)
     {}
 
     template <typename policy>
@@ -26,7 +24,6 @@ struct packet_header
         p % SYNC_1;
         p % SYNC_2;
         p % id;
-        p % deserialized_size;
     }
 };
 
@@ -51,7 +48,7 @@ struct packet
     packet_footer<typename checksum_policy::data_type> footer;
 
     packet(T& t, const uint8_t id = 0)
-        : header(sizeof(T), id)
+        : header(id)
         , data(t)
     {
     }
@@ -70,7 +67,6 @@ struct packet
         checksum_policy p;
 
         p % header.id;
-        p % header.deserialized_size;
         p % data;
 
         return p.checksum();
