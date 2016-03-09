@@ -124,7 +124,9 @@ struct binary_serialization
 
         checksum_policy(data_type& checksum)
             : _checksum(checksum)
-        {}
+        {
+            _checksum = 0;
+        }
 
         uint8_t checksum() const { return _checksum; }
 
