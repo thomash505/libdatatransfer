@@ -192,9 +192,11 @@ protected:
 								// Silently fail on error
 								_parse_state = WAIT_FOR_SYNC_1;
 							}
-
-							_rx_packet.header.id = c;
-							_parse_state = WAIT_FOR_SIZE;
+							else
+							{
+								_rx_packet.header.id = c;
+								_parse_state = WAIT_FOR_SIZE;
+							}
 						break;
 						case WAIT_FOR_SIZE:
 							_rx_packet.header.deserialized_size = c;
