@@ -124,8 +124,8 @@ public:
 		: _stop_thread(false)
 		, _wait_ms(waitMs)
 		, _iostream(stream)
-		, _read_thread(std::bind(&p2p_connector::run_read, this))
-		, _rx_packet(_read_buffer)
+        , _read_thread([this] () { run_read(); })
+        , _rx_packet(_read_buffer)
 		, _parse_state(WAIT_FOR_SYNC_1)
 	{}
 
@@ -142,6 +142,14 @@ public:
 
 		_message_handlers[T-1] = handler;
 	}
+
+    template<int T>
+    void deregisterMessageHandler()
+    {
+        static_assert(serialization_policy::valid(T), "T is not a valid message type");
+
+        _message_handlers[T-1] = nullptr;
+    }
 
 	template<int T>
         void send(typename serialization_policy::template data<T>::type& data)
