@@ -8,8 +8,10 @@ namespace datatransfer {
 template <typename read_policy>
 class deserializer
 {
-protected:
+public:
     using input_stream = typename read_policy::stream_type;
+
+protected:    
 	input_stream& _is;
 	read_policy _read_policy;    
 

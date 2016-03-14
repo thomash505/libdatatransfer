@@ -22,8 +22,7 @@ public:
 
 template<typename mutex,
          typename input_output_stream,
-         typename serialization_policy,
-         unsigned int MAX_MESSAGE_SIZE=1024>
+         typename serialization_policy>
 class p2p_connector
 {
     using message_handler_callback = std::function<void(const void*)>;
@@ -31,13 +30,42 @@ class p2p_connector
     using write_policy = typename serialization_policy::template serialization<input_output_stream>::write_policy;
     using read_policy = typename serialization_policy::template serialization<input_output_stream>::read_policy;
     using checksum_policy = typename serialization_policy::template serialization<input_output_stream>::checksum_policy;
+    using size_policy = typename serialization_policy::template serialization<input_output_stream>::size_policy;
+
+    template<int N,
+             int Count>
+    struct SizeHelper
+    {
+        static size_t size(int id, uint8_t data[serialization_policy::MAX_MESSAGE_SIZE])
+        {
+            if (N == id)
+            {
+                using type = typename serialization_policy::template data<N>::type;
+
+                type* t = reinterpret_cast<type*>(data);
+                size_policy s;
+                s.operate(*t);
+                return s.size();
+            }
+            else
+            {
+                SizeHelper<N+1, Count-1>::size(id, data);
+            }
+        }
+    };
+
+    template <int N>
+    struct SizeHelper<N,0>
+    {
+        static size_t size(int id, uint8_t data[serialization_policy::MAX_MESSAGE_SIZE]) { return 0; }
+    };
 
     template<int N,
              int Count>
     struct CallbackHelper
     {
         static void callback(const typename checksum_policy::data_type& checksum,
-                             packet<uint8_t[MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
+                             packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
                              const message_handler_array& message_handlers)
         {
             if (N == rx_packet.header.id)
@@ -66,7 +94,7 @@ class p2p_connector
     struct CallbackHelper<N,0>
     {
         static void callback(const typename checksum_policy::data_type& checksum,
-                             packet<uint8_t[MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
+                             packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
                              const message_handler_array& message_handlers)
         {}
     };
@@ -114,17 +142,19 @@ protected:
     mutex _send_mutex;
     input_output_stream& _iostream;
     message_handler_array _message_handlers;
-    packet<uint8_t[MAX_MESSAGE_SIZE], checksum_policy> _rx_packet;
-    uint8_t _read_buffer[MAX_MESSAGE_SIZE];
+    packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy> _rx_packet;
+    uint8_t _parse_buffer[serialization_policy::MAX_MESSAGE_SIZE];
+    typename deserializer<read_policy>::input_stream _input_stream;
+    uint8_t _payload_size;
     parse_state _parse_state;
     deserializer<read_policy> _deserializer;
 
 public:
     p2p_connector(input_output_stream& stream)
         : _iostream(stream)
-        , _rx_packet(_read_buffer)
+        , _rx_packet(_parse_buffer)
         , _parse_state(WAIT_FOR_SYNC_1)
-        , _deserializer(_iostream)
+        , _deserializer(_input_stream)
     {}
 
     ~p2p_connector() {}
@@ -195,17 +225,34 @@ public:
                         {
                             _rx_packet.header.id = c;
                             _deserializer.reset();
-                            _parse_state = WAIT_FOR_DATA;
-                            _iostream.ungetc();
+                            SizeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                            _payload_size = helper.size(_rx_packet.header.id, _rx_packet.data);
+                            _input_stream.clear();
+                            if (_payload_size > serialization_policy::MAX_MESSAGE_SIZE)
+                            {
+                                _parse_state = WAIT_FOR_SYNC_1;
+                            }
+                            else
+                            {
+                                _parse_state = WAIT_FOR_DATA;
+                            }
                         }
                     }
                     break;
                     case WAIT_FOR_DATA:
                     {
-                        DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
-                        if (helper.deserializeType(_rx_packet.header.id, _deserializer, _read_buffer, c))
+                        _input_stream.putc(c);
+                        if (_input_stream.size() == _payload_size)
                         {
-                            _parse_state = WAIT_FOR_CRC;
+                            DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                            if (helper.deserializeType(_rx_packet.header.id, _deserializer, _parse_buffer, c))
+                            {
+                                _parse_state = WAIT_FOR_CRC;
+                            }
+                            else
+                            {
+                                _parse_state = WAIT_FOR_SYNC_1;
+                            }
                         }
                     }
                     break;
