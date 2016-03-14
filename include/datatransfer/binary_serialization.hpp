@@ -9,168 +9,162 @@ namespace datatransfer
 struct binary_serialization
 {
     template <typename output_stream>
-    class write_policy
+    class write_policy_base
     {
     public:
         using stream_type = output_stream;
-        output_stream& os;
-
-        write_policy(output_stream& os) : os(os) {}
-
-        template <typename T>
-        write_policy<output_stream>& operator% (T& x)
-        {
-            operate(x);
-
-            return *this;
-        }
-
-        template <typename Scalar, int M, int N>
-        void operate(Eigen::Matrix<Scalar, M, N>& matrix)
-        {
-            for (int j = 0; j < N; j++)
-            {
-                for (int i = 0; i < M; i++)
-                {
-                    operate(matrix(i,j));
-                }
-            }
-        }
-
-        template <typename T, int M=0, int N=0>
-        void operate(T& t)
-        {
-            t.template method<write_policy<output_stream> >(os);
-        }
+        using return_type = void;
 
     protected:
-        void operate(int& x)			{ write(x); }
-        void operate(float& x)			{ write(x); }
-        void operate(double& x)			{ write(x); }
-        void operate(char& x)			{ write(x); }
-        void operate(uint8_t& x)		{ write(x); }
-        void operate(bool& x)			{ write(x); }
-        void operate(uint64_t& x)		{ write(x); }
+        write_policy_base(output_stream& os)
+            : _os(os)
+        {}
 
-    private:
         template <typename T>
-        void write(const T& t)
+        return_type action(const T& t)
         {
             // Assume little endian encoding
-            os.write(reinterpret_cast<const typename output_stream::char_type*>(&t), sizeof(T));
+            _os.write(reinterpret_cast<const typename output_stream::char_type*>(&t), sizeof(T));
         }
+
+    private:
+        output_stream& _os;
     };
 
     template <typename input_stream>
-    struct read_policy
+    class read_policy_base
     {
+    public:
         using stream_type = input_stream;
-        input_stream& is;
-
-        read_policy(input_stream& is) : is(is) {}
-
-        template <typename T>
-        read_policy& operator% (T& x)
-        {
-            operate(x);
-
-            return *this;
-        }
+        using return_type = bool;
 
     protected:
-        template <typename Scalar, int M, int N>
-        void operate(Eigen::Matrix<Scalar, M, N>& matrix)
-        {
-            for (int j = 0; j < N; j++)
-            {
-                for (int i = 0; i < M; i++)
-                {
-                    operate(matrix(i,j));
-                }
-            }
-        }
-
-    public:
-        template <typename T, int M=0, int N=0>
-        void operate(T& t)
-        {
-            t.template method<read_policy<input_stream> >(is);
-        }
-
-        bool operate(int& x) 		{ return read(x); }
-        bool operate(float& x) 		{ return read(x); }
-        bool operate(double& x) 	{ return read(x); }
-        bool operate(char& x)   	{ return read(x); }
-        bool operate(bool& x)   	{ return read(x); }
-        bool operate(uint64_t& x)	{ return read(x); }
+        read_policy_base(input_stream& is)
+            : _is(is)
+        {}
 
         template <typename T>
-        bool read(T& t)
+        return_type action(T& t)
         {
             // Assume little endian encoding
-			const auto n = sizeof(T);
-			return is.read(reinterpret_cast<typename input_stream::char_type*>(&t), n) == n;
+            const int n = sizeof(T);
+            auto buf = reinterpret_cast<typename input_stream::char_type*>(&t);
+            return _is.read(buf, n) == n;
         }
+
+    private:
+        input_stream& _is;
     };
 
-    class checksum_policy
+    class checksum_policy_base
     {
-    private:
-        uint8_t& _checksum;
-
     public:
         using data_type = uint8_t;
-        using stream_type = data_type;
+        using return_type = void;
 
-        checksum_policy(data_type& checksum)
+    protected:
+        checksum_policy_base(data_type& checksum)
             : _checksum(checksum)
         {
             _checksum = 0;
         }
 
-        uint8_t checksum() const { return _checksum; }
-
         template <typename T>
-        void operator% (T& x)
-        {
-            operate(x);
-        }
-
-    protected:
-        template <typename Scalar, int M, int N>
-        void operate(Eigen::Matrix<Scalar, M, N>& matrix)
-        {
-            for (int j = 0; j < N; j++)
-            {
-                for (int i = 0; i < M; i++)
-                {
-                    operate(matrix(i,j));
-                }
-            }
-        }
-
-        template <typename T, int M=0, int N=0>
-        void operate(T& t)
-        {
-            t.template method<checksum_policy>(_checksum);
-        }
-
-        void operate(float& x) 		{ read(x); }
-        void operate(double& x) 	{ read(x); }
-        void operate(char& x)   	{ read(x); }
-        void operate(bool& x)   	{ read(x); }
-        void operate(uint8_t& x)    { read(x); }
-        void operate(uint64_t& x)	{ read(x); }
-
-        template <typename T>
-        void read(T& t)
+        return_type action(T& t)
         {
             // Assume little endian encoding
             auto* buf = reinterpret_cast<const data_type*>(&t);
             for (int i = 0; i < sizeof(T); ++i)
                 _checksum ^= buf[i];
         }
+
+    public:
+        data_type checksum() const { return _checksum; }
+
+    private:
+        data_type& _checksum;
     };
+
+    class size_policy_base
+    {
+    public:
+        using data_type = size_t;
+        using return_type = void;
+
+    protected:
+        size_policy_base()
+            : _size(0)
+        {}
+
+        template <typename T>
+        return_type action(T& t) { _size += sizeof(T); }
+
+    public:
+        data_type size() const { return _size; }
+
+    private:
+        data_type _size;
+    };
+
+    template <typename policy, typename ...Args>
+    class primitives : public policy
+    {
+    public:
+        primitives(Args ...args)
+            : policy(args...)
+        {}
+
+        template <typename T>
+        primitives<policy, Args...>& operator% (T& x)
+        {
+            operate(x);
+
+            return *this;
+        }
+
+        template <typename Scalar, int M, int N>
+        void operate(Eigen::Matrix<Scalar, M, N>& matrix)
+        {
+            for (int j = 0; j < N; j++)
+            {
+                for (int i = 0; i < M; i++)
+                {
+                    operate(matrix(i,j));
+                }
+            }
+        }
+
+        template <typename Scalar, int N>
+        void operate(Eigen::Matrix<Scalar, Eigen::Dynamic, N>& matrix) {}
+
+        template <typename Scalar, int M>
+        void operate(Eigen::Matrix<Scalar, M, Eigen::Dynamic>& matrix) {}
+
+        template <typename Scalar>
+        void operate(Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>& matrix) {}
+
+        template <typename T>
+        void operate(T& t)
+        {
+            t.template method(*this);
+        }
+
+        void operate(int& x)			{ policy::action(x); }
+        void operate(float& x)			{ policy::action(x); }
+        void operate(double& x)			{ policy::action(x); }
+        void operate(char& x)			{ policy::action(x); }
+        void operate(uint8_t& x)		{ policy::action(x); }
+        void operate(bool& x)			{ policy::action(x); }
+        void operate(uint64_t& x)		{ policy::action(x); }
+    };
+
+    template <typename output_stream>
+    using write_policy = primitives<write_policy_base<output_stream>, output_stream&>;
+
+    template <typename input_stream>
+    using read_policy = primitives<read_policy_base<input_stream>, input_stream&>;
+
+    using checksum_policy = primitives<checksum_policy_base, checksum_policy_base::data_type&>;
 };
 
 }

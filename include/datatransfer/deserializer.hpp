@@ -9,20 +9,23 @@ template <typename read_policy>
 class deserializer
 {
 protected:
-	using input_stream = typename read_policy::stream_type;
+    using input_stream = typename read_policy::stream_type;
 	input_stream& _is;
-	read_policy _read_policy;
+	read_policy _read_policy;    
 
 public:
-	deserializer(input_stream& is)
+    deserializer(input_stream& is)
 		: _is(is)
-		, _read_policy(is)
+        , _read_policy(is)
 	{}
 
+    void reset() {}
+
 	template <typename T>
-	void operator() (T &t)
+    bool operator() (T &t)
 	{
-		_read_policy.operate(t);
+        _read_policy.operate(t);
+        return true;
 	}
 };
 

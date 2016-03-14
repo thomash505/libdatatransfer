@@ -75,16 +75,18 @@ class p2p_connector
              int Count>
     struct DeserializeHelper
     {
-        void static deserializeType(int data_type, deserializer<read_policy>& deserializer, uint8_t* read_buffer)
+        bool static deserializeType(int data_type, deserializer<read_policy>& deserializer, uint8_t* read_buffer, uint8_t c)
         {
             if (N == data_type )
             {
                 if (serialization_policy::template data<N>::length > 0)
-                    deserializer(reinterpret_cast<typename serialization_policy::template data<N>::type&>(*read_buffer));
+                {
+                    return deserializer(reinterpret_cast<typename serialization_policy::template data<N>::type&>(*read_buffer));
+                }
             }
             else
             {
-                DeserializeHelper<N+1,Count-1>::deserializeType(data_type, deserializer,read_buffer);
+                return DeserializeHelper<N+1,Count-1>::deserializeType(data_type, deserializer, read_buffer, c);
             }
         }
     };
@@ -92,7 +94,11 @@ class p2p_connector
     template<int N>
     struct DeserializeHelper<N, 0>
     {
-        void static deserializeType(uint8_t, deserializer<read_policy>&, uint8_t*) { }
+        bool static deserializeType(uint8_t, deserializer<read_policy>&, uint8_t*, uint8_t)
+        {
+            // Invalid data type
+            return false;
+        }
     };
 
     enum parse_state
@@ -100,6 +106,7 @@ class p2p_connector
         WAIT_FOR_SYNC_1,
         WAIT_FOR_SYNC_2,
         WAIT_FOR_ID,
+        WAIT_FOR_DATA,
         WAIT_FOR_CRC
     };
 
@@ -110,12 +117,14 @@ protected:
     packet<uint8_t[MAX_MESSAGE_SIZE], checksum_policy> _rx_packet;
     uint8_t _read_buffer[MAX_MESSAGE_SIZE];
     parse_state _parse_state;
+    deserializer<read_policy> _deserializer;
 
 public:
     p2p_connector(input_output_stream& stream)
         : _iostream(stream)
         , _rx_packet(_read_buffer)
         , _parse_state(WAIT_FOR_SYNC_1)
+        , _deserializer(_iostream)
     {}
 
     ~p2p_connector() {}
@@ -185,11 +194,17 @@ public:
                         else
                         {
                             _rx_packet.header.id = c;
-                            deserializer<read_policy> d(_iostream);
-
-                            DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
-                            helper.deserializeType(_rx_packet.header.id, d, _read_buffer);
-
+                            _deserializer.reset();
+                            _parse_state = WAIT_FOR_DATA;
+                            _iostream.ungetc();
+                        }
+                    }
+                    break;
+                    case WAIT_FOR_DATA:
+                    {
+                        DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                        if (helper.deserializeType(_rx_packet.header.id, _deserializer, _read_buffer, c))
+                        {
                             _parse_state = WAIT_FOR_CRC;
                         }
                     }

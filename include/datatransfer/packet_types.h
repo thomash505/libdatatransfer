@@ -18,9 +18,8 @@ struct packet_header
     {}
 
     template <typename policy>
-    void method(typename policy::stream_type& stream)
+    void method(policy& p)
     {
-        policy p(stream);
         p % SYNC_1;
         p % SYNC_2;
         p % id;
@@ -33,9 +32,8 @@ struct packet_footer
     checksum_type checksum;
 
     template <typename policy>
-    void method(typename policy::stream_type& stream)
+    void method(policy& p)
     {
-        policy p(stream);
         p % checksum;
     }
 };
@@ -54,9 +52,8 @@ struct packet
     }
 
     template <typename policy>
-    void method(typename policy::stream_type& stream)
+    void method(policy& p)
     {
-        policy p(stream);
         p % header;
         p % data;
         p % footer;
