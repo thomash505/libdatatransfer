@@ -74,7 +74,7 @@ struct binary_serialization
                 index = 0;
             }
 
-            void putc(char_type c)
+            void receive(char_type c)
             {
                 if (n < N)
                     data[n++] = c;
