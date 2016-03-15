@@ -234,7 +234,7 @@ public:
                     break;
                     case WAIT_FOR_DATA:
                     {
-                        _input_stream.putc(c);
+                        _input_stream.receive(c);
                         if (_input_stream.size() == _payload_size)
                         {
                             DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
