@@ -1,9 +1,7 @@
 #ifndef DATATRANSFER_P2P_CONNECTOR_HPP
 #define DATATRANSFER_P2P_CONNECTOR_HPP
 
-#include <memory>
-
-#include "message_handler_base.hpp"
+#include "callback_handler.hpp"
 #include "serializer.hpp"
 #include "deserializer.hpp"
 
@@ -25,8 +23,7 @@ template<typename mutex,
          typename serialization_policy>
 class p2p_connector
 {
-    using message_handler_callback = std::function<void(const void*)>;
-    using message_handler_array = message_handler_callback[serialization_policy::NUMBER_OF_MESSAGES];
+    using callback_handler_type = callback_handler<serialization_policy>;
     using write_policy = typename serialization_policy::template serialization<input_output_stream>::write_policy;
     using read_policy = typename serialization_policy::template serialization<input_output_stream>::read_policy;
     using checksum_policy = typename serialization_policy::template serialization<input_output_stream>::checksum_policy;
@@ -66,7 +63,7 @@ class p2p_connector
     {
         static void callback(const typename checksum_policy::data_type& checksum,
                              packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
-                             const message_handler_array& message_handlers)
+                             callback_handler_type& message_handlers)
         {
             if (N == rx_packet.header.id)
             {
@@ -76,11 +73,7 @@ class p2p_connector
 
                 if (checksum == decoded_packet.calculate_crc())
                 {
-                    auto id = rx_packet.header.id - 1;
-                    if (message_handlers[id])
-                    {
-                        message_handlers[id](rx_packet.data);
-                    }
+                    message_handlers.template signal<N>(reinterpret_cast<const type&>(rx_packet.data));
                 }
             }
             else
@@ -95,7 +88,7 @@ class p2p_connector
     {
         static void callback(const typename checksum_policy::data_type& checksum,
                              packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
-                             const message_handler_array& message_handlers)
+                             callback_handler_type& message_handlers)
         {}
     };
 
@@ -141,7 +134,7 @@ class p2p_connector
 protected:
     mutex _send_mutex;
     input_output_stream& _iostream;
-    message_handler_array _message_handlers;
+    callback_handler_type _message_handlers;
     packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy> _rx_packet;
     uint8_t _parse_buffer[serialization_policy::MAX_MESSAGE_SIZE];
     typename deserializer<read_policy>::input_stream _input_stream;
@@ -160,11 +153,11 @@ public:
     ~p2p_connector() {}
 
     template<int T>
-    void registerMessageHandler(message_handler_callback handler)
+    void registerMessageHandler(typename callback_handler_type::template function_type<T> handler)
     {
         static_assert(serialization_policy::valid(T), "T is not a valid message type");
 
-        _message_handlers[T-1] = handler;
+        _message_handlers.template registerHandler<T>(handler);
     }
 
     template<int T>
@@ -172,7 +165,7 @@ public:
     {
         static_assert(serialization_policy::valid(T), "T is not a valid message type");
 
-        _message_handlers[T-1] = nullptr;
+        //_message_handlers[T-1] = nullptr;
     }
 
     template<int T>
