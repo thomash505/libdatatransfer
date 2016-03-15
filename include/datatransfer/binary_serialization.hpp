@@ -1,8 +1,6 @@
 #ifndef DATATRANSFER_BINARY_SERIALIZATION_HPP
 #define DATATRANSFER_BINARY_SERIALIZATION_HPP
 
-#include <Eigen/Core>
-
 namespace datatransfer
 {
 
@@ -175,26 +173,16 @@ struct binary_serialization
             return *this;
         }
 
-        template <typename Scalar, int M, int N>
-        void operate(Eigen::Matrix<Scalar, M, N>& matrix)
+        template <typename T, int N>
+        primitives<policy, Args...>& operator% (T (&x)[N])
         {
-            for (int j = 0; j < N; j++)
-            {
-                for (int i = 0; i < M; i++)
-                {
-                    operate(matrix(i,j));
-                }
-            }
+            static_assert(N > 0, "Array size must be greater than 0");
+
+            for (int i = 0; i < N; ++i)
+                operate(x[i]);
+
+            return *this;
         }
-
-        template <typename Scalar, int N>
-        void operate(Eigen::Matrix<Scalar, Eigen::Dynamic, N>& matrix) {}
-
-        template <typename Scalar, int M>
-        void operate(Eigen::Matrix<Scalar, M, Eigen::Dynamic>& matrix) {}
-
-        template <typename Scalar>
-        void operate(Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>& matrix) {}
 
         template <typename T>
         void operate(T& t)
