@@ -46,7 +46,7 @@ class p2p_connector
             }
             else
             {
-                SizeHelper<N+1, Count-1>::size(id, data);
+                return SizeHelper<N+1, Count-1>::size(id, data);
             }
         }
     };
