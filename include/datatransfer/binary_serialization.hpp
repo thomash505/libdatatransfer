@@ -187,7 +187,7 @@ struct binary_serialization
         template <typename T>
         void operate(T& t)
         {
-            t.template method(*this);
+            t.method(*this);
         }
 
         void operate(int& x)			{ policy::action(x); }
