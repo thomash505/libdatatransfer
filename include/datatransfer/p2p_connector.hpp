@@ -1,7 +1,6 @@
 #ifndef DATATRANSFER_P2P_CONNECTOR_HPP
 #define DATATRANSFER_P2P_CONNECTOR_HPP
 
-#include "callback_handler.hpp"
 #include "serializer.hpp"
 #include "deserializer.hpp"
 
@@ -20,10 +19,10 @@ public:
 
 template<typename mutex,
          typename input_output_stream,
-         typename serialization_policy>
+         typename serialization_policy,
+         typename callback_handler_type>
 class p2p_connector
 {
-    using callback_handler_type = callback_handler<serialization_policy>;
     using write_policy = typename serialization_policy::template serialization<input_output_stream>::write_policy;
     using read_policy = typename serialization_policy::template serialization<input_output_stream>::read_policy;
     using checksum_policy = typename serialization_policy::template serialization<input_output_stream>::checksum_policy;
