@@ -187,6 +187,18 @@ public:
         }
     }
 
+    void readOnce()
+    {
+        if (_iostream.good())
+        {
+            int c;
+            if ((c = _iostream.get()) >= 0)
+            {
+                processChar(c);
+            }
+        }
+    }
+
     void read()
     {
         if (_iostream.good())
@@ -194,69 +206,76 @@ public:
             int c;
             while ((c = _iostream.get()) >= 0)
             {
-                switch (_parse_state)
+                processChar(c);
+            }
+        }
+    }
+
+private:
+
+    void processChar(int c)
+    {
+        switch (_parse_state)
+        {
+            case WAIT_FOR_SYNC_1:
+                if (c == _rx_packet.header.SYNC_1)
+                    _parse_state = WAIT_FOR_SYNC_2;
+            break;
+            case WAIT_FOR_SYNC_2:
+                if (c == _rx_packet.header.SYNC_2)
+                    _parse_state = WAIT_FOR_ID;
+                else
+                    _parse_state = WAIT_FOR_SYNC_1;
+            break;
+            case WAIT_FOR_ID:
+            {
+                if (!serialization_policy::valid(c))
                 {
-                    case WAIT_FOR_SYNC_1:
-                        if (c == _rx_packet.header.SYNC_1)
-                            _parse_state = WAIT_FOR_SYNC_2;
-                    break;
-                    case WAIT_FOR_SYNC_2:
-                        if (c == _rx_packet.header.SYNC_2)
-                            _parse_state = WAIT_FOR_ID;
-                        else
-                            _parse_state = WAIT_FOR_SYNC_1;
-                    break;
-                    case WAIT_FOR_ID:
+                    // Silently fail on error
+                    _parse_state = WAIT_FOR_SYNC_1;
+                }
+                else
+                {
+                    _rx_packet.header.id = c;
+                    _deserializer.reset();
+                    SizeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                    _payload_size = helper.size(_rx_packet.header.id, _rx_packet.data);
+                    _input_stream.clear();
+                    if (_payload_size > serialization_policy::MAX_MESSAGE_SIZE)
                     {
-                        if (!serialization_policy::valid(c))
-                        {
-                            // Silently fail on error
-                            _parse_state = WAIT_FOR_SYNC_1;
-                        }
-                        else
-                        {
-                            _rx_packet.header.id = c;
-                            _deserializer.reset();
-                            SizeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
-                            _payload_size = helper.size(_rx_packet.header.id, _rx_packet.data);
-                            _input_stream.clear();
-                            if (_payload_size > serialization_policy::MAX_MESSAGE_SIZE)
-                            {
-                                _parse_state = WAIT_FOR_SYNC_1;
-                            }
-                            else
-                            {
-                                _parse_state = WAIT_FOR_DATA;
-                            }
-                        }
-                    }
-                    break;
-                    case WAIT_FOR_DATA:
-                    {
-                        _input_stream.receive(c);
-                        if (_input_stream.size() == _payload_size)
-                        {
-                            DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
-                            if (helper.deserializeType(_rx_packet.header.id, _deserializer, _parse_buffer, c))
-                            {
-                                _parse_state = WAIT_FOR_CRC;
-                            }
-                            else
-                            {
-                                _parse_state = WAIT_FOR_SYNC_1;
-                            }
-                        }
-                    }
-                    break;
-                    case WAIT_FOR_CRC:
-                    {
-                        CallbackHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
-                        helper.callback(c, _rx_packet, _message_handlers);
                         _parse_state = WAIT_FOR_SYNC_1;
                     }
-                    break;
+                    else
+                    {
+                        _parse_state = WAIT_FOR_DATA;
+                    }
                 }
             }
+            break;
+            case WAIT_FOR_DATA:
+            {
+                _input_stream.receive(c);
+                if (_input_stream.size() == _payload_size)
+                {
+                    DeserializeHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                    if (helper.deserializeType(_rx_packet.header.id, _deserializer, _parse_buffer, c))
+                    {
+                        _parse_state = WAIT_FOR_CRC;
+                    }
+                    else
+                    {
+                        _parse_state = WAIT_FOR_SYNC_1;
+                    }
+                }
+            }
+            break;
+            case WAIT_FOR_CRC:
+            {
+                CallbackHelper<1, serialization_policy::NUMBER_OF_MESSAGES> helper;
+                helper.callback(c, _rx_packet, _message_handlers);
+                _parse_state = WAIT_FOR_SYNC_1;
+            }
+            break;
         }
     }
 };
