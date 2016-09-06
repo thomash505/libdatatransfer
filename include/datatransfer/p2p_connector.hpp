@@ -1,6 +1,7 @@
 #ifndef DATATRANSFER_P2P_CONNECTOR_HPP
 #define DATATRANSFER_P2P_CONNECTOR_HPP
 
+#include <cstdio>
 #include "callback_handler.hpp"
 #include "serializer.hpp"
 #include "deserializer.hpp"

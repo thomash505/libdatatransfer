@@ -190,12 +190,16 @@ struct binary_serialization
             t.method(*this);
         }
 
-        void operate(int& x)			{ policy::action(x); }
         void operate(float& x)			{ policy::action(x); }
         void operate(double& x)			{ policy::action(x); }
-        void operate(char& x)			{ policy::action(x); }
-        void operate(uint8_t& x)		{ policy::action(x); }
         void operate(bool& x)			{ policy::action(x); }
+        void operate(int8_t& x)			{ policy::action(x); }
+        void operate(uint8_t& x)		{ policy::action(x); }
+        void operate(int16_t& x)        { policy::action(x); }
+        void operate(uint16_t& x)       { policy::action(x); }
+        void operate(int32_t& x)        { policy::action(x); }
+        void operate(uint32_t& x)       { policy::action(x); }
+        void operate(int64_t& x)        { policy::action(x); }
         void operate(uint64_t& x)		{ policy::action(x); }
     };
 
