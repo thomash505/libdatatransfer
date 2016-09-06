@@ -18,7 +18,7 @@ struct binary_serialization
         {}
 
         template <typename T>
-        return_type action(T& t) { _size += sizeof(T); }
+        return_type action(T&) { _size += sizeof(T); }
 
     public:
         data_type size() const { return _size; }
@@ -146,7 +146,7 @@ struct binary_serialization
         {
             // Assume little endian encoding
             auto* buf = reinterpret_cast<const data_type*>(&t);
-            for (int i = 0; i < sizeof(T); ++i)
+            for (size_t i = 0; i < sizeof(T); ++i)
                 _checksum ^= buf[i];
         }
 

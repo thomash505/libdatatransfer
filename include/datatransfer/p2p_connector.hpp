@@ -54,7 +54,7 @@ class p2p_connector
     template <int N>
     struct SizeHelper<N,0>
     {
-        static size_t size(int id, uint8_t data[serialization_policy::MAX_MESSAGE_SIZE]) { return 0; }
+        static size_t size(int, uint8_t[]) { return 0; }
     };
 
     template<int N,
@@ -86,9 +86,9 @@ class p2p_connector
     template<int N>
     struct CallbackHelper<N,0>
     {
-        static void callback(const typename checksum_policy::data_type& checksum,
-                             packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy>& rx_packet,
-                             callback_handler_type& message_handlers)
+        static void callback(const typename checksum_policy::data_type&,
+                             packet<uint8_t[serialization_policy::MAX_MESSAGE_SIZE], checksum_policy>&,
+                             callback_handler_type&)
         {}
     };
 
